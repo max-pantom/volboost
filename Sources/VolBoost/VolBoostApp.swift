@@ -15,6 +15,11 @@ struct VolBoostApp: App {
             Snapshot.render(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
             exit(0)
         }
+        // `VolBoost --demo-video <file.mp4>` renders the promo clip and exits.
+        if let i = CommandLine.arguments.firstIndex(of: "--demo-video"), i + 1 < CommandLine.arguments.count {
+            DemoVideo.render(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+            exit(0)
+        }
     }
 
     var body: some Scene {
@@ -45,18 +50,18 @@ final class BoostModel {
     private(set) var launchAtLoginNote: String?
 
     var enabled: Bool {
-        didSet { defaults.set(enabled, forKey: "enabled"); apply() }
+        didSet { guard !isPreview else { return }; defaults.set(enabled, forKey: "enabled"); apply() }
     }
     /// 100...200, same range as VLC's slider.
     var percent: Double {
-        didSet { defaults.set(percent, forKey: "percent"); engine.setBoost(Float(percent / 100)) }
+        didSet { guard !isPreview else { return }; defaults.set(percent, forKey: "percent"); engine.setBoost(Float(percent / 100)) }
     }
     /// dB per Equalizer.bands entry.
     var eqGains: [Double] {
-        didSet { defaults.set(eqGains, forKey: "eqGains"); engine.setEQ(eqGains) }
+        didSet { guard !isPreview else { return }; defaults.set(eqGains, forKey: "eqGains"); engine.setEQ(eqGains) }
     }
     var launchAtLogin: Bool {
-        didSet { if launchAtLogin != oldValue { updateLoginItem() } }
+        didSet { if !isPreview, launchAtLogin != oldValue { updateLoginItem() } }
     }
 
     var preset: EQPreset? { EQPreset.allCases.first { $0.gains == eqGains } }
@@ -88,6 +93,13 @@ final class BoostModel {
         launchAtLogin = true
         outputName = "Mac mini Speakers"
         latencyMs = 16
+        self.levelDb = levelDb
+        self.limitingDb = limitingDb
+    }
+
+    /// Drives the meters in preview renders (the demo video).
+    func setPreviewMeters(levelDb: Double, limitingDb: Double) {
+        guard isPreview else { return }
         self.levelDb = levelDb
         self.limitingDb = limitingDb
     }
