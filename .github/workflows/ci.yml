@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: DSP checks
+        run: swift run -c release DSPCheck
+      - name: Build app bundle
+        run: ./build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VolBoost.app
+          path: VolBoost.app
