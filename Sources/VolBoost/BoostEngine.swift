@@ -18,6 +18,11 @@ private let log = Logger(subsystem: "local.volboost", category: "engine")
 ///   -> IOProc runs a 5-band EQ (Equalizer.swift), then `percent^3` gain
 ///      through a lookahead limiter (Limiter.swift)
 ///   -> default output device
+///
+/// The engine itself lives on the main actor; only `render` and the IOProc
+/// block run on the HAL's realtime thread, and they share state with the main
+/// thread solely through `IOState` and the EQ's own try-lock.
+@MainActor
 final class BoostEngine {
     enum Failure: Error, CustomStringConvertible {
         case status(String, OSStatus)
@@ -30,15 +35,6 @@ final class BoostEngine {
         }
     }
 
-    /// Values the IO thread publishes for the UI. Plain stores; a stale read is harmless.
-    struct Meters {
-        var inputPeak: Float = 0      // linear, before EQ/boost
-        var outputPeak: Float = 0     // linear, after the limiter
-        var limiterGain: Float = 1    // < 1 while limiting
-        var underruns = 0
-        var buffersWithSignal = 0
-    }
-
     private(set) var isRunning = false
     private(set) var outputName = ""
     /// Extra delay we add on top of the device's own, in ms.
@@ -49,25 +45,22 @@ final class BoostEngine {
     private var outputID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
     private var tapDescription: CATapDescription?
-    private var limiter: Limiter?
+    private var limiterLookahead = 0
     private var equalizer: Equalizer?
     private var eqGains = EQPreset.flat.gains
-    private var boost: Float = 1
     private var healthLog: Timer?
+    private var lastHealth = (underruns: 0, buffersWithSignal: 0)
     private var deviceListeners: [(AudioObjectID, AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
 
-    private let ready = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
-    let meters = UnsafeMutablePointer<Meters>.allocate(capacity: 1)
+    let io = IOState()
 
     /// Called on the main queue when the output device or its format changes
     /// and the engine should be restarted.
-    var onNeedsRestart: (() -> Void)?
+    var onNeedsRestart: (@MainActor () -> Void)?
 
     private static let preferredBufferFrames: UInt32 = 256
 
     init() {
-        ready.initialize(to: false)
-        meters.initialize(to: Meters())
         var addr = Self.address(kAudioHardwarePropertyDefaultOutputDevice)
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &addr, .main) { [weak self] _, _ in
             log.notice("restart: default output changed")
@@ -76,15 +69,15 @@ final class BoostEngine {
     }
 
     deinit {
-        stop()
-        ready.deallocate()
-        meters.deallocate()
+        // The engine is owned by the app model for the process lifetime, so this
+        // runs on the main thread at exit if at all; assert rather than hop.
+        MainActor.assumeIsolated { stop() }
     }
 
     /// `percent` is 1.0...2.0 like VLC's slider; gain follows VLC's cubic curve.
     func setBoost(_ percent: Float) {
-        boost = percent * percent * percent
-        limiter?.targetGain = boost
+        let gain = percent * percent * percent
+        io.update { $0.targetGain = gain }
     }
 
     func setEQ(_ gains: [Double]) {
@@ -133,39 +126,53 @@ final class BoostEngine {
         AudioObjectSetPropertyData(aggregateID, &addr, 0, nil, UInt32(MemoryLayout<UInt32>.size), &frames)
 
         let rate = Self.sampleRate(aggregateID) ?? 48_000
-        let limiter = Limiter(sampleRate: rate)
-        limiter.reset(gain: boost)
-        self.limiter = limiter
         let equalizer = Equalizer(sampleRate: rate, gains: eqGains)
         self.equalizer = equalizer
+        var gain: Float = 1
+        io.update { gain = $0.targetGain; $0.ready = false }
+        // The limiter is owned by the IO block from here on.
+        let ioBlock = Self.makeIOBlock(io: io, equalizer: equalizer, sampleRate: rate, gain: gain, lookahead: &limiterLookahead)
         let bufferFrames = Self.uint32(aggregateID, kAudioDevicePropertyBufferFrameSize) ?? 512
-        addedLatencyMs = (Double(bufferFrames) * 2 + Double(limiter.lookaheadFrames)) / rate * 1000
+        addedLatencyMs = (Double(bufferFrames) * 2 + Double(limiterLookahead)) / rate * 1000
         Self.logFormats(tap: tapID, aggregate: aggregateID, output: outputID, bufferFrames: bufferFrames, addedMs: addedLatencyMs)
 
         // nil queue = called directly on the HAL's realtime IO thread. Hopping
         // to a dispatch queue adds scheduling jitter, which is audible as crackle.
-        let ready = self.ready, meters = self.meters
-        meters.pointee = Meters()
-        try check("Create IOProc", AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, nil) { _, input, _, output, _ in
-            let outList = UnsafeMutableAudioBufferListPointer(output)
-            guard ready.pointee else { return Self.silence(outList) }
-            Self.render(UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input)), outList, equalizer, limiter, meters)
-        })
+        try check("Create IOProc", AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, nil, ioBlock))
         try check("Start device", AudioDeviceStart(aggregateID, ioProcID))
         isRunning = true
 
         try excludeSelfIfNeeded()
-        ready.pointee = true
+        io.update { $0.ready = true }
         listenForDeviceChanges()
 
         // Every 5 s, log underruns and whether audio is flowing (when changed).
-        var last = (0, 0)
-        healthLog = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [meters] _ in
-            let now = (meters.pointee.underruns, meters.pointee.buffersWithSignal)
-            if now != last {
-                log.notice("health: underruns \(now.0, privacy: .public), buffers with signal \(now.1, privacy: .public)")
-                last = now
-            }
+        healthLog = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.logHealth() }
+        }
+    }
+
+    private func logHealth() {
+        let now = io.totalCounts()
+        guard now != lastHealth else { return }
+        log.notice("health: underruns \(now.underruns, privacy: .public), buffers with signal \(now.buffersWithSignal, privacy: .public)")
+        lastHealth = now
+    }
+
+    /// Built outside the main actor on purpose: a closure formed in a
+    /// main-actor method would be main-actor isolated, and Swift 6 traps when
+    /// the HAL calls it on its IO thread.
+    nonisolated private static func makeIOBlock(io: IOState, equalizer: Equalizer, sampleRate: Double, gain: Float,
+                                                lookahead: inout Int) -> AudioDeviceIOBlock {
+        let limiter = Limiter(sampleRate: sampleRate)
+        limiter.reset(gain: gain)
+        lookahead = limiter.lookaheadFrames
+        return { _, input, _, output, _ in
+            let outList = UnsafeMutableAudioBufferListPointer(output)
+            let settings = io.beginBuffer()
+            guard settings.ready else { return silence(outList) }
+            limiter.targetGain = settings.targetGain
+            io.record(render(UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input)), outList, equalizer, limiter))
         }
     }
 
@@ -229,7 +236,7 @@ final class BoostEngine {
     }
 
     func stop() {
-        ready.pointee = false
+        io.update { $0.ready = false }
         healthLog?.invalidate()
         healthLog = nil
         for (object, addr, block) in deviceListeners {
@@ -251,7 +258,6 @@ final class BoostEngine {
             tapID = AudioObjectID(kAudioObjectUnknown)
         }
         tapDescription = nil
-        limiter = nil
         equalizer = nil
         isRunning = false
     }
@@ -262,17 +268,19 @@ final class BoostEngine {
     /// itself, e.g. a headset mic, come first). Output may be interleaved or
     /// split across buffers; channels are counted across all of them and
     /// anything past the tap's channels repeats its last channel.
-    private static func render(_ input: UnsafeMutableAudioBufferListPointer, _ output: UnsafeMutableAudioBufferListPointer,
-                               _ equalizer: Equalizer, _ limiter: Limiter, _ meters: UnsafeMutablePointer<Meters>) {
+    nonisolated private static func render(_ input: UnsafeMutableAudioBufferListPointer, _ output: UnsafeMutableAudioBufferListPointer,
+                                           _ equalizer: Equalizer, _ limiter: Limiter) -> IOState.Meters {
+        var meters = IOState.Meters()
         guard let src = input.last, let srcSamples = src.mData?.assumingMemoryBound(to: Float.self), src.mNumberChannels > 0,
               let first = output.first, first.mNumberChannels > 0 else {
-            return silence(output)
+            silence(output)
+            return meters
         }
         let inChannels = min(Int(src.mNumberChannels), Limiter.maxChannels)
         let srcStride = Int(src.mNumberChannels)
         let inFrames = Int(src.mDataByteSize) / (MemoryLayout<Float>.size * srcStride)
         let outFrames = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * Int(first.mNumberChannels))
-        if inFrames < outFrames { meters.pointee.underruns &+= 1 }
+        if inFrames < outFrames { meters.underruns = 1 }
         equalizer.beginBuffer()
 
         var inPeak: Float = 0, outPeak: Float = 0
@@ -305,14 +313,14 @@ final class BoostEngine {
                 }
             }
         }
-        if inPeak > 1e-4 { meters.pointee.buffersWithSignal &+= 1 }
-        // Peak-hold for the UI, which decays these when it reads them.
-        meters.pointee.inputPeak = max(meters.pointee.inputPeak, inPeak)
-        meters.pointee.outputPeak = max(meters.pointee.outputPeak, outPeak)
-        meters.pointee.limiterGain = min(meters.pointee.limiterGain, limiter.currentReduction)
+        if inPeak > 1e-4 { meters.buffersWithSignal = 1 }
+        meters.inputPeak = inPeak
+        meters.outputPeak = outPeak
+        meters.limiterGain = limiter.currentReduction
+        return meters
     }
 
-    private static func silence(_ output: UnsafeMutableAudioBufferListPointer) {
+    nonisolated private static func silence(_ output: UnsafeMutableAudioBufferListPointer) {
         for buffer in output where buffer.mData != nil {
             memset(buffer.mData, 0, Int(buffer.mDataByteSize))
         }

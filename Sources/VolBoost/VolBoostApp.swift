@@ -5,7 +5,9 @@ import VolBoostDSP
 
 @main
 struct VolBoostApp: App {
-    @StateObject private var model = BoostModel()
+    // Not @State: the App value lives for the whole process, and @State is a
+    // macro the Command Line Tools ship no plugin for.
+    private let model = BoostModel()
 
     init() {
         // `VolBoost --snapshot <dir>` renders README screenshots and exits.
@@ -17,7 +19,7 @@ struct VolBoostApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            BoostView().environmentObject(model)
+            BoostView().environment(model)
         } label: {
             Image(systemName: model.enabled ? "speaker.wave.3.fill" : "speaker.wave.1")
         }
@@ -26,33 +28,34 @@ struct VolBoostApp: App {
 }
 
 @MainActor
-final class BoostModel: ObservableObject {
-    private let engine = BoostEngine()
-    private let defaults = UserDefaults.standard
-    private var restartWork: DispatchWorkItem?
-    private var meterTimer: Timer?
-    private var isPreview = false
+@Observable
+final class BoostModel {
+    @ObservationIgnored private let engine = BoostEngine()
+    @ObservationIgnored private let defaults = UserDefaults.standard
+    @ObservationIgnored private var restartWork: DispatchWorkItem?
+    @ObservationIgnored private var meterTimer: Timer?
+    @ObservationIgnored private var isPreview = false
 
-    @Published var error: String?
-    @Published private(set) var outputName = ""
-    @Published private(set) var latencyMs = 0.0
+    var error: String?
+    private(set) var outputName = ""
+    private(set) var latencyMs = 0.0
     /// dBFS of the boosted output, and dB the limiter is pulling down (<= 0).
-    @Published private(set) var levelDb: Double = -90
-    @Published private(set) var limitingDb: Double = 0
-    @Published private(set) var launchAtLoginNote: String?
+    private(set) var levelDb: Double = -90
+    private(set) var limitingDb: Double = 0
+    private(set) var launchAtLoginNote: String?
 
-    @Published var enabled: Bool {
+    var enabled: Bool {
         didSet { defaults.set(enabled, forKey: "enabled"); apply() }
     }
     /// 100...200, same range as VLC's slider.
-    @Published var percent: Double {
+    var percent: Double {
         didSet { defaults.set(percent, forKey: "percent"); engine.setBoost(Float(percent / 100)) }
     }
     /// dB per Equalizer.bands entry.
-    @Published var eqGains: [Double] {
+    var eqGains: [Double] {
         didSet { defaults.set(eqGains, forKey: "eqGains"); engine.setEQ(eqGains) }
     }
-    @Published var launchAtLogin: Bool {
+    var launchAtLogin: Bool {
         didSet { if launchAtLogin != oldValue { updateLoginItem() } }
     }
 
@@ -69,16 +72,13 @@ final class BoostModel: ObservableObject {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         engine.setBoost(Float(percent / 100))
         engine.setEQ(eqGains)
-        engine.onNeedsRestart = { [weak self] in
-            Task { @MainActor in self?.scheduleRestart() }
-        }
+        engine.onNeedsRestart = { [weak self] in self?.scheduleRestart() }
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [engine] _ in
-            engine.stop()
+            MainActor.assumeIsolated { engine.stop() }
         }
         apply()
     }
 
-    /// Device changes arrive as bursts of notifications; restart once they settle.
     /// Static state for screenshots; never touches the engine or settings.
     init(previewPercent: Double, eq: [Double], levelDb: Double, limitingDb: Double) {
         isPreview = true
@@ -92,6 +92,7 @@ final class BoostModel: ObservableObject {
         self.limitingDb = limitingDb
     }
 
+    /// Device changes arrive as bursts of notifications; restart once they settle.
     private func scheduleRestart() {
         restartWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.apply() }
@@ -122,7 +123,7 @@ final class BoostModel: ObservableObject {
         guard !isPreview else { return }
         meterTimer?.invalidate()
         meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.readMeters() }
+            MainActor.assumeIsolated { self?.readMeters() }
         }
     }
 
@@ -133,10 +134,7 @@ final class BoostModel: ObservableObject {
 
     private func readMeters() {
         guard engine.isRunning else { levelDb = -90; limitingDb = 0; return }
-        let m = engine.meters.pointee
-        engine.meters.pointee.outputPeak = 0
-        engine.meters.pointee.inputPeak = 0
-        engine.meters.pointee.limiterGain = 1
+        let m = engine.io.takeMeters()
         let level = 20 * log10(max(Double(m.outputPeak), 1e-5))
         let limiting = 20 * log10(max(Double(m.limiterGain), 1e-5))
         // Fast attack, ~10 dB/s fall so the bars are readable.
@@ -166,9 +164,10 @@ final class BoostModel: ObservableObject {
 }
 
 struct BoostView: View {
-    @EnvironmentObject var model: BoostModel
+    @Environment(BoostModel.self) private var model
 
     var body: some View {
+        @Bindable var model = model
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -261,9 +260,10 @@ struct MeterRow: View {
 }
 
 struct EQView: View {
-    @EnvironmentObject var model: BoostModel
+    @Environment(BoostModel.self) private var model
 
     var body: some View {
+        @Bindable var model = model
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Equalizer").font(.subheadline.weight(.medium))

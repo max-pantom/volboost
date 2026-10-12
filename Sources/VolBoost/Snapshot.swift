@@ -11,7 +11,7 @@ enum Snapshot {
         for (name, appearance) in [("menu-light", NSAppearance.Name.aqua), ("menu-dark", .darkAqua)] {
             let model = BoostModel(previewPercent: 160, eq: EQPreset.smallSpeakers.gains, levelDb: -3, limitingDb: -5.5)
             let view = BoostView()
-                .environmentObject(model)
+                .environment(model)
                 .background(Color(nsColor: .windowBackgroundColor))
             let hosting = NSHostingView(rootView: view)
             hosting.appearance = NSAppearance(named: appearance)

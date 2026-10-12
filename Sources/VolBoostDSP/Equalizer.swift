@@ -8,8 +8,8 @@ import os
 /// thread picks them up with a try-lock at the start of each buffer, so it
 /// never blocks.
 public final class Equalizer {
-    public enum Kind { case lowShelf, peak, highShelf }
-    public struct Band {
+    public enum Kind: Sendable { case lowShelf, peak, highShelf }
+    public struct Band: Sendable {
         public let name: String
         public let kind: Kind
         public let frequency: Double
@@ -130,7 +130,7 @@ public final class Equalizer {
     }
 }
 
-public enum EQPreset: String, CaseIterable, Identifiable {
+public enum EQPreset: String, CaseIterable, Identifiable, Sendable {
     case flat = "Flat"
     case bass = "Bass boost"
     case clarity = "Vocal clarity"

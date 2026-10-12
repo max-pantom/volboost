@@ -41,7 +41,7 @@ small 5-band EQ to rebalance quiet or thin-sounding audio.
 ## Requirements
 
 - macOS 14.2 or later (uses Core Audio process taps)
-- Swift 5.10+ — the Xcode Command Line Tools are enough to build
+- Swift 6.0+ — the Xcode Command Line Tools are enough to build
 
 ## Build and run
 
@@ -96,18 +96,6 @@ apps ──► process tap on the default output device (originals muted while t
 | `Sources/DSPCheck/main.swift` | Offline signal checks for the DSP |
 | `Sources/VolBoost/Snapshot.swift` | Renders the README screenshots (`VolBoost.app/Contents/MacOS/VolBoost --snapshot docs`) |
 | `Icon/` | App icon, drawn in code (`Icon/make-icon.sh` regenerates it) |
-
-## Releasing
-
-Push a version tag and the [release workflow](.github/workflows/release.yml)
-builds a universal `VolBoost.zip` and publishes it as a GitHub release:
-
-```sh
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-The website in `docs/` is served by GitHub Pages (Settings › Pages › Deploy
-from branch `main`, folder `/docs`).
 
 ## Testing
 

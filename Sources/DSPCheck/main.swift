@@ -6,7 +6,7 @@ import VolBoostDSP
 let sampleRate = 48_000.0
 var failures = 0
 
-func check(_ name: String, _ ok: Bool, _ detail: String) {
+@MainActor func check(_ name: String, _ ok: Bool, _ detail: String) {
     print("\(ok ? "PASS" : "FAIL")  \(name): \(detail)")
     if !ok { failures += 1 }
 }
