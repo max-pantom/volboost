@@ -12,8 +12,8 @@ jobs:
       - name: DSP checks
         run: swift run -c release DSPCheck
       - name: Build app bundle
-        run: ./build.sh
+        run: ZIP=1 ./build.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: VolBoost.app
-          path: VolBoost.app
+          name: VolBoost
+          path: VolBoost.zip

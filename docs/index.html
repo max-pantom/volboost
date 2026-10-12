@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VolBoost — volume past 100% on your Mac</title>
+  <meta name="description" content="A tiny menu bar app that boosts your whole Mac's volume up to 200%, cleanly, with a 5-band EQ. Free and open source.">
+  <meta property="og:title" content="VolBoost">
+  <meta property="og:description" content="Turn your whole Mac up past 100% — VLC-style volume boost for every app, from the menu bar.">
+  <meta property="og:image" content="https://max-pantom.github.io/volboost/menu-dark.png">
+  <link rel="icon" href="favicon.png">
+  <style>
+    :root {
+      --bg: #f6f5fb;
+      --surface: #ffffff;
+      --text: #17162a;
+      --muted: #5d5b72;
+      --line: rgba(23, 22, 42, 0.1);
+      --accent: #6a35d9;
+      --accent-2: #f25d6b;
+      --glow: rgba(106, 53, 217, 0.18);
+      --code-bg: #efedf7;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0e0d1a;
+        --surface: #171528;
+        --text: #f1f0fa;
+        --muted: #a6a3bf;
+        --line: rgba(241, 240, 250, 0.1);
+        --accent: #9b6bff;
+        --accent-2: #ff6f7c;
+        --glow: rgba(155, 107, 255, 0.22);
+        --code-bg: #211e36;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+
+    /* Hero */
+    header {
+      position: relative;
+      overflow: hidden;
+      text-align: center;
+      padding: 72px 0 24px;
+    }
+    header::before {
+      content: "";
+      position: absolute;
+      inset: -40% -20% auto;
+      height: 640px;
+      background: radial-gradient(closest-side, var(--glow), transparent);
+      pointer-events: none;
+    }
+    .app-icon { width: 128px; height: 128px; position: relative; }
+    h1 {
+      font-size: clamp(40px, 7vw, 64px);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin: 16px 0 12px;
+      position: relative;
+    }
+    .tagline {
+      font-size: clamp(18px, 2.4vw, 22px);
+      color: var(--muted);
+      max-width: 34em;
+      margin: 0 auto 32px;
+      position: relative;
+    }
+    .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; position: relative; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 14px 24px;
+      border-radius: 999px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary {
+      color: #fff;
+      background: linear-gradient(120deg, var(--accent), var(--accent-2));
+      box-shadow: 0 8px 24px var(--glow);
+    }
+    .btn-secondary { color: var(--text); background: var(--surface); border: 1px solid var(--line); }
+    .btn svg { width: 18px; height: 18px; flex: none; }
+    .meta { color: var(--muted); font-size: 14px; margin-top: 14px; position: relative; }
+
+    .shot { display: flex; justify-content: center; margin: 24px 0 8px; }
+    .shot img { width: min(420px, 100%); height: auto; }
+
+    /* Sections */
+    section { padding: 56px 0; border-top: 1px solid var(--line); }
+    h2 { font-size: 30px; letter-spacing: -0.02em; margin: 0 0 24px; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 22px;
+    }
+    .card h3 { font-size: 17px; margin: 0 0 6px; }
+    .card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+    ol.steps { padding-left: 1.2em; margin: 0; }
+    ol.steps li { margin-bottom: 10px; }
+    .note {
+      margin-top: 20px;
+      padding: 16px 18px;
+      border-radius: 12px;
+      background: var(--code-bg);
+      color: var(--muted);
+      font-size: 15px;
+    }
+    code, pre {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 14px;
+    }
+    code { background: var(--code-bg); padding: 2px 6px; border-radius: 6px; }
+    pre {
+      background: var(--code-bg);
+      padding: 16px 18px;
+      border-radius: 12px;
+      overflow-x: auto;
+      margin: 0;
+      line-height: 1.5;
+    }
+    pre code { background: none; padding: 0; }
+    .flow { color: var(--muted); }
+
+    footer { padding: 40px 0 56px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <img class="app-icon" src="icon.png" alt="VolBoost app icon">
+      <h1>VolBoost</h1>
+      <p class="tagline">Turn your whole Mac up past 100%. VLC-style volume boost for every app, right from the menu bar — loud, and still clean.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="https://github.com/max-pantom/volboost/releases/latest/download/VolBoost.zip">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+          Download for macOS
+        </a>
+        <a class="btn btn-secondary" href="https://github.com/max-pantom/volboost">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+          View source
+        </a>
+      </div>
+      <p class="meta">Free &amp; open source · macOS 14.2+ · Apple silicon &amp; Intel · ~1 MB</p>
+      <div class="shot">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="menu-dark.png">
+          <img src="menu-light.png" alt="The VolBoost menu: boost slider at 160%, level and limiting meters, and a 5-band equalizer" width="380" height="452">
+        </picture>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div class="wrap">
+        <h2>Louder, without the crackle</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Up to 200%</h3>
+            <p>Boosts every app at once — browser, Zoom, Spotify, games — using the same volume curve as VLC. That's up to +18 dB.</p>
+          </div>
+          <div class="card">
+            <h3>Stays clean</h3>
+            <p>A lookahead limiter turns peaks down just before they hit, instead of clipping them. No distortion, even at full boost.</p>
+          </div>
+          <div class="card">
+            <h3>5-band EQ</h3>
+            <p>Bass, Low-mid, Mid, Presence and Treble, with presets — including one tuned for small built-in speakers.</p>
+          </div>
+          <div class="card">
+            <h3>Stays out of the way</h3>
+            <p>Lives in the menu bar, follows your output when you plug in headphones, adds ~16 ms of delay and ~1% CPU.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <div class="wrap">
+        <h2>Install</h2>
+        <ol class="steps">
+          <li><a href="https://github.com/max-pantom/volboost/releases/latest/download/VolBoost.zip">Download VolBoost.zip</a> and drag <strong>VolBoost.app</strong> into your Applications folder.</li>
+          <li>Open it. VolBoost isn't notarized by Apple yet, so macOS will block the first launch — go to <strong>System Settings › Privacy &amp; Security</strong>, scroll down and click <strong>Open Anyway</strong>.</li>
+          <li>Click the speaker in your menu bar and switch VolBoost on. macOS asks for <strong>System Audio Recording</strong> permission — VolBoost needs it to read the audio it boosts. Nothing is recorded or sent anywhere.</li>
+        </ol>
+        <div class="note">
+          Prefer the terminal? This removes the download quarantine flag instead of step 2:
+          <pre><code>xattr -dr com.apple.quarantine /Applications/VolBoost.app</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>How it works</h2>
+        <p>VLC goes past 100% by cubing its volume and handing it to its own audio output with no upper limit — but that only works for what VLC plays. VolBoost does the same thing for your whole Mac using Core Audio process taps:</p>
+        <pre class="flow"><code>apps → tap on your output device (originals muted)
+     → EQ → gain (percent³) → lookahead limiter
+     → your speakers or headphones</code></pre>
+        <p>Read the details, build it yourself, or contribute on <a href="https://github.com/max-pantom/volboost">GitHub</a>.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      MIT licensed · Not affiliated with VideoLAN or VLC
+    </div>
+  </footer>
+</body>
+</html>

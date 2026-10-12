@@ -1,0 +1,23 @@
+name: Release
+
+# Push a tag like v0.1.0 to build VolBoost.zip and publish it as a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: DSP checks
+        run: swift run -c release DSPCheck
+      - name: Build
+        run: VERSION="${GITHUB_REF_NAME}" ZIP=1 ./build.sh
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: VolBoost.zip
+          generate_release_notes: true

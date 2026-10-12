@@ -17,6 +17,16 @@ VolBoost is a tiny menu bar app that boosts system-wide audio up to **200%**
 (+18 dB), with a lookahead limiter so it gets louder without crackling, and a
 small 5-band EQ to rebalance quiet or thin-sounding audio.
 
+## Download
+
+**[Download VolBoost.zip](https://github.com/max-pantom/volboost/releases/latest/download/VolBoost.zip)** — universal (Apple silicon + Intel), macOS 14.2+.
+
+1. Unzip and drag **VolBoost.app** into Applications.
+2. VolBoost isn't notarized yet, so macOS blocks the first launch: open
+   **System Settings › Privacy & Security**, scroll down, click **Open Anyway**.
+   (Or run `xattr -dr com.apple.quarantine /Applications/VolBoost.app`.)
+3. Click the speaker in the menu bar and switch VolBoost on.
+
 ## Features
 
 - **Boost 100–200%** using the same cubic volume curve as VLC
@@ -40,7 +50,8 @@ small 5-band EQ to rebalance quiet or thin-sounding audio.
 open VolBoost.app
 ```
 
-`build.sh` produces an ad-hoc signed `VolBoost.app`. Move it to
+`build.sh` produces a universal, ad-hoc signed `VolBoost.app`
+(`ZIP=1 ./build.sh` also writes `VolBoost.zip`). Move it to
 `/Applications` if you want to use *Open at login*.
 
 The first time you switch VolBoost on, macOS asks for **System Audio
@@ -85,6 +96,18 @@ apps ──► process tap on the default output device (originals muted while t
 | `Sources/DSPCheck/main.swift` | Offline signal checks for the DSP |
 | `Sources/VolBoost/Snapshot.swift` | Renders the README screenshots (`VolBoost.app/Contents/MacOS/VolBoost --snapshot docs`) |
 | `Icon/` | App icon, drawn in code (`Icon/make-icon.sh` regenerates it) |
+
+## Releasing
+
+Push a version tag and the [release workflow](.github/workflows/release.yml)
+builds a universal `VolBoost.zip` and publishes it as a GitHub release:
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The website in `docs/` is served by GitHub Pages (Settings › Pages › Deploy
+from branch `main`, folder `/docs`).
 
 ## Testing
 

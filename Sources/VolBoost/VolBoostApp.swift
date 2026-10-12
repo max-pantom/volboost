@@ -195,17 +195,13 @@ struct BoostView: View {
                         .monospacedDigit()
                 }
                 .font(.caption)
-                Slider(value: $model.percent.snapped(to: 5), in: 100...200)
+                Slider(value: $model.percent, in: 100...200, step: 5)
                 MeterRow(label: "Level", value: (model.levelDb + 48) / 48, tint: .green,
                          text: model.levelDb > -60 ? String(format: "%.0f dB", model.levelDb) : "—")
-                MeterRow(label: "Limiting", value: -model.limitingDb / 18, tint: .orange,
+                // Turns red instead of inserting a hint row, so the panel never changes height.
+                MeterRow(label: "Limiting", value: -model.limitingDb / 18, tint: model.limitingDb < -9 ? .red : .orange,
                          text: model.limitingDb < -0.5 ? String(format: "%.1f dB", model.limitingDb) : "—")
-                if model.limitingDb < -9 {
-                    Text("Limiting hard — lower the boost or cut Bass for a cleaner sound.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                    .help("Red means the limiter is working hard — lower the boost or cut Bass for a cleaner sound.")
             }
             .disabled(!model.enabled)
 
@@ -287,7 +283,7 @@ struct EQView: View {
                     Text(Equalizer.bands[i].name)
                         .font(.caption)
                         .frame(width: 56, alignment: .leading)
-                    Slider(value: $model.eqGains[i].snapped(to: 0.5), in: Equalizer.range)
+                    Slider(value: $model.eqGains[i], in: Equalizer.range, step: 0.5)
                         .controlSize(.small)
                     Text(String(format: "%+.1f", model.eqGains[i]))
                         .font(.caption)
@@ -298,12 +294,5 @@ struct EQView: View {
                 .onTapGesture(count: 2) { model.eqGains[i] = 0 }
             }
         }
-    }
-}
-
-extension Binding where Value == Double {
-    /// Snaps writes to a step without the tick marks `Slider(step:)` draws.
-    func snapped(to step: Double) -> Binding<Double> {
-        Binding(get: { wrappedValue }, set: { wrappedValue = ($0 / step).rounded() * step })
     }
 }
