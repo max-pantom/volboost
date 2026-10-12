@@ -7,6 +7,14 @@ import VolBoostDSP
 struct VolBoostApp: App {
     @StateObject private var model = BoostModel()
 
+    init() {
+        // `VolBoost --snapshot <dir>` renders README screenshots and exits.
+        if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
+            Snapshot.render(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+            exit(0)
+        }
+    }
+
     var body: some Scene {
         MenuBarExtra {
             BoostView().environmentObject(model)
@@ -23,6 +31,7 @@ final class BoostModel: ObservableObject {
     private let defaults = UserDefaults.standard
     private var restartWork: DispatchWorkItem?
     private var meterTimer: Timer?
+    private var isPreview = false
 
     @Published var error: String?
     @Published private(set) var outputName = ""
@@ -70,6 +79,19 @@ final class BoostModel: ObservableObject {
     }
 
     /// Device changes arrive as bursts of notifications; restart once they settle.
+    /// Static state for screenshots; never touches the engine or settings.
+    init(previewPercent: Double, eq: [Double], levelDb: Double, limitingDb: Double) {
+        isPreview = true
+        enabled = true
+        percent = previewPercent
+        eqGains = eq
+        launchAtLogin = true
+        outputName = "Mac mini Speakers"
+        latencyMs = 16
+        self.levelDb = levelDb
+        self.limitingDb = limitingDb
+    }
+
     private func scheduleRestart() {
         restartWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.apply() }
@@ -97,6 +119,7 @@ final class BoostModel: ObservableObject {
     // MARK: Meters (only polled while the panel is open)
 
     func startMeters() {
+        guard !isPreview else { return }
         meterTimer?.invalidate()
         meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.readMeters() }
@@ -172,7 +195,7 @@ struct BoostView: View {
                         .monospacedDigit()
                 }
                 .font(.caption)
-                Slider(value: $model.percent, in: 100...200, step: 5)
+                Slider(value: $model.percent.snapped(to: 5), in: 100...200)
                 MeterRow(label: "Level", value: (model.levelDb + 48) / 48, tint: .green,
                          text: model.levelDb > -60 ? String(format: "%.0f dB", model.levelDb) : "—")
                 MeterRow(label: "Limiting", value: -model.limitingDb / 18, tint: .orange,
@@ -255,6 +278,8 @@ struct EQView: View {
                     }
                 }
                 .menuStyle(.borderlessButton)
+                .controlSize(.small)
+                .font(.caption)
                 .fixedSize()
             }
             ForEach(Equalizer.bands.indices, id: \.self) { i in
@@ -262,7 +287,7 @@ struct EQView: View {
                     Text(Equalizer.bands[i].name)
                         .font(.caption)
                         .frame(width: 56, alignment: .leading)
-                    Slider(value: $model.eqGains[i], in: Equalizer.range, step: 0.5)
+                    Slider(value: $model.eqGains[i].snapped(to: 0.5), in: Equalizer.range)
                         .controlSize(.small)
                     Text(String(format: "%+.1f", model.eqGains[i]))
                         .font(.caption)
@@ -273,5 +298,12 @@ struct EQView: View {
                 .onTapGesture(count: 2) { model.eqGains[i] = 0 }
             }
         }
+    }
+}
+
+extension Binding where Value == Double {
+    /// Snaps writes to a step without the tick marks `Slider(step:)` draws.
+    func snapped(to step: Double) -> Binding<Double> {
+        Binding(get: { wrappedValue }, set: { wrappedValue = ($0 / step).rounded() * step })
     }
 }

@@ -6,7 +6,12 @@
 
 <p align="center">Turn your whole Mac up past 100% — VLC-style volume boost for every app, from the menu bar.</p>
 
----
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/menu-dark.png">
+    <img src="docs/menu-light.png" width="380" alt="VolBoost menu: boost slider at 160%, level and limiting meters, 5-band equalizer">
+  </picture>
+</p>
 
 VolBoost is a tiny menu bar app that boosts system-wide audio up to **200%**
 (+18 dB), with a lookahead limiter so it gets louder without crackling, and a
@@ -78,6 +83,7 @@ apps ──► process tap on the default output device (originals muted while t
 | `Sources/VolBoostDSP/Limiter.swift` | Gain + lookahead limiter |
 | `Sources/VolBoostDSP/Equalizer.swift` | 5-band EQ and presets |
 | `Sources/DSPCheck/main.swift` | Offline signal checks for the DSP |
+| `Sources/VolBoost/Snapshot.swift` | Renders the README screenshots (`VolBoost.app/Contents/MacOS/VolBoost --snapshot docs`) |
 | `Icon/` | App icon, drawn in code (`Icon/make-icon.sh` regenerates it) |
 
 ## Testing
